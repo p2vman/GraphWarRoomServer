@@ -1,0 +1,61 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '8.3.8'
+}
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven {
+        url = uri("https://libraries.minecraft.net")
+    }
+}
+
+dependencies {
+    // https://mvnrepository.com/artifact/org.projectlombok/lombok
+    compileOnly 'org.projectlombok:lombok:1.18.42'
+    annotationProcessor 'org.projectlombok:lombok:1.18.42'
+
+    compileOnly 'com.google.auto.service:auto-service-annotations:1.1.1'
+    annotationProcessor 'com.google.auto.service:auto-service:1.1.1'
+
+    implementation "io.netty:netty-transport:4.2.15.Final"
+    implementation "io.netty:netty-buffer:4.2.15.Final"
+    implementation "io.netty:netty-codec:4.2.15.Final"
+    implementation "io.netty:netty-handler:4.2.15.Final"
+
+    // https://mvnrepository.com/artifact/io.netty/netty-transport-native-epoll
+    implementation 'io.netty:netty-transport-native-epoll:4.2.15.Final'
+    runtimeOnly 'io.netty:netty-transport-native-epoll:4.2.15.Final:linux-x86_64'
+
+    // https://mvnrepository.com/artifact/io.netty/netty-transport-native-io_uring
+    implementation 'io.netty:netty-transport-native-io_uring:4.2.8.Final'
+    runtimeOnly 'io.netty:netty-transport-native-io_uring:4.2.8.Final:linux-x86_64'
+
+    // Source: https://mvnrepository.com/artifact/it.unimi.dsi/fastutil
+    implementation 'it.unimi.dsi:fastutil:8.5.18'
+
+    implementation 'org.slf4j:slf4j-api:2.0.13'
+    implementation 'ch.qos.logback:logback-classic:1.5.13'
+
+    // Source: https://mvnrepository.com/artifact/org.jline/jline
+    implementation 'org.jline:jline:3.25.1'
+
+    // https://mvnrepository.com/artifact/org.joml/joml
+    implementation("org.joml:joml:1.10.8")
+    // https://mvnrepository.com/artifact/org.joml/joml-primitives
+    implementation("org.joml:joml-primitives:1.10.0")
+
+    implementation("com.mojang:datafixerupper:8.0.16")
+}
+
+tasks.named('shadowJar', ShadowJar) {
+    archiveFileName = 'shadow.jar'
+
+    manifest {
+        attributes 'Main-Class': 'io.p2vman.graphwarserver.Main'
+    }
+}
