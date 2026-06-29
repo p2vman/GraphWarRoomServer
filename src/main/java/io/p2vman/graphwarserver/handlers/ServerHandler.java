@@ -36,7 +36,7 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
         var channel = ctx.channel();
         String[] i = input_message.split("&");
 
-        LOGGER.info("{}: {} < {}", player.getName(), input_message, i);
+        LOGGER.debug("{}: {} < {}", player.getName(), input_message, i);
 
         switch (Integer.parseInt(i[0])) {
             case 39:
@@ -133,6 +133,10 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
             case 40: {
                 this.server.gameFinished(player);
                 break;
+            }
+            case 17: {
+                int pid = Integer.parseInt(i[1]);
+                this.server.addSoldier(player, pid);
             }
         }
     }

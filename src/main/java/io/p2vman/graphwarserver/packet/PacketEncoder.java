@@ -11,7 +11,6 @@ public class PacketEncoder extends MessageToMessageEncoder<Packet> {
     private static final Logger LOGGER = LoggerFactory.getLogger(PacketEncoder.class);
     @Override
     protected void encode(ChannelHandlerContext ctx, Packet msg, List<Object> out) {
-        LOGGER.warn("{}\n", msg.serialize());
         out.add(msg.serialize()+"\n");
     }
 }

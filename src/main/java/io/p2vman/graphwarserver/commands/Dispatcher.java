@@ -31,7 +31,7 @@ public class Dispatcher {
 
     public boolean handleCommand(@NonNull String input, @NonNull CommandContext ctx) {
         try {
-            if (input.startsWith("-")) {
+            if (input.startsWith("/")) {
                 handle(input.substring(1), ctx);
                 return true;
             }

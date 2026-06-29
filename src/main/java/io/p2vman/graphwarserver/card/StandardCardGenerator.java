@@ -65,12 +65,9 @@ public class StandardCardGenerator implements CardGenerator
         List<Vector2i> soldiers = new ArrayList<>();
 
         for (Avatar player : players) {
-            //for (int i = 0; i < player.getNumSoldiers(); i++) {
-            //    Soldier soldier = generateSoldier(soldiers, circles, player.getTeam());
-            //    soldiers.add(soldier);
-            //}
-            Vector2i soldier = generateSoldier(soldiers, circles, player.getTeam());
-            soldiers.add(soldier);
+            for (int i = 0; i < player.getNum_soldiers(); i++) {
+                soldiers.add(generateSoldier(soldiers, circles, player.getTeam()));
+            }
         }
 
         Vector2i[] soldiersPos = new Vector2i[soldiers.size()];

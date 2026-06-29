@@ -1,5 +1,6 @@
 package io.p2vman.graphwarserver.util;
 
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.epoll.EpollIoHandler;
 import io.netty.channel.epoll.EpollServerSocketChannel;
@@ -12,6 +13,8 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.channel.uring.IoUringIoHandler;
 import io.netty.channel.uring.IoUringServerSocketChannel;
 import io.netty.channel.uring.IoUringSocketChannel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.NonNull;
 
 import java.util.function.Function;
@@ -60,5 +63,17 @@ public enum EventLoopGroupType {
             if (type.isAvailable()) return type;
         }
         return EventLoopGroupType.Nio;
+    }
+
+    public EventLoopContext asContext(int boos, int worker) {
+        return new EventLoopContext(this, this.newEventLoop(boos), this.newEventLoop(worker));
+    }
+
+    @AllArgsConstructor
+    @Getter
+    public static class EventLoopContext {
+        private final EventLoopGroupType type;
+        private final EventLoopGroup boosGroup;
+        private final EventLoopGroup workerGroup;
     }
 }

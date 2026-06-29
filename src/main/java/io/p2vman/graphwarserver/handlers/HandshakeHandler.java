@@ -5,19 +5,34 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.p2vman.graphwarserver.BasicServer;
 import io.p2vman.graphwarserver.Player;
+import io.p2vman.graphwarserver.events.OnHandshakeEvent;
 import io.p2vman.graphwarserver.packet.sc.ChatMessagePacket;
 import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URLEncoder;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 @AllArgsConstructor
 public class HandshakeHandler extends ChannelInboundHandlerAdapter {
     private static final Logger LOGGER = LoggerFactory.getLogger(HandshakeHandler.class);
+
+    private static final Pattern VALID_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9а-яА-ЯёЁ _-]+$");
+
+
+    private static final String[] BANNED_WORDS = {
+            "admin", "moder", "server", "support", "system", "root", "dev_", "_dev", "owner",
+            "hitler", "gitler", "stalin", "lenin", "mussolini", "himmler", "goebbels",
+            "nazi", "ss_", "_ss", "gestapo", "swastika", "fascist", "фашист", "гитлер", "сталин",
+            "nigger", "nigga", "niga", "niger", "negr", "blackie", "pidor", "пидор", "негр", "хач",
+            "хуй", "хуе", "хуи", "пизд", "ебал", "ебат", "сука", "бля", "гандон", "презерватив",
+            "fuck", "bitch", "asshole", "dick", "cunt", "whore", "slut", "bastard"
+    };
+
     private final BasicServer server;
 
     @Override
@@ -43,16 +58,49 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
             return;
         }
 
-        var name = URLEncoder.encode(n, StandardCharsets.UTF_8);
-        if (name.equals("Player") || name.toLowerCase(Locale.ROOT).contains("bot") || name.equals("NotMe")) {
+        var name = URLDecoder.decode(n, StandardCharsets.UTF_8).trim();
+
+        if (name.length() < 3 || name.length() > 18) {
+            LOGGER.warn("Handshake rejected: invalid length ({}) from {}", name.length(), channel.remoteAddress());
             ctx.close();
             return;
         }
+
+        if (!VALID_NAME_PATTERN.matcher(name).matches()) {
+            LOGGER.warn("Handshake rejected: invalid characters in name '{}' from {}", name, channel.remoteAddress());
+            ctx.close();
+            return;
+        }
+
+        String lowerName = name.toLowerCase(Locale.ROOT);
+
+        if (name.equals("Player") || lowerName.contains("bot") || name.equals("NotMe")) {
+            LOGGER.warn("Handshake rejected: default/bot name '{}' from {}", name, channel.remoteAddress());
+            ctx.close();
+            return;
+        }
+
+        for (String banned : BANNED_WORDS) {
+            if (lowerName.contains(banned)) {
+                LOGGER.warn("Handshake rejected: banned word match '{}' in name '{}' from {}", banned, name, channel.remoteAddress());
+                ctx.close();
+                return;
+            }
+        }
+
         LOGGER.info("Handshake: {}", name);
         if (!this.server.accept_clients.get()) {
             ctx.close();
             return;
         }
+
+        var event = new OnHandshakeEvent(channel, name);
+        this.server.getEventbus().post(event);
+        if (event.isCancel()) {
+            ctx.close();
+            return;
+        }
+
         var player = new Player(name, channel);
         var pipeline = ctx.pipeline();
         if (!this.server.onPlayerLogin(player)) {
@@ -85,9 +133,6 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
     {
         if (evt instanceof IdleStateEvent)
         {
-            IdleStateEvent e =
-                    (IdleStateEvent) evt;
-
             var channel = ctx.channel();
 
             if (channel.hasAttr(Player.PLAYER_ATTRIBUTE_KEY)) {

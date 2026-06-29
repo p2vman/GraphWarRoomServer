@@ -18,24 +18,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
-public class TrackerClient {
+public class TrackerClient implements ITracker {
     private static final Logger LOGGER = LoggerFactory.getLogger(TrackerClient.class);
-    private final EventLoopGroup group;
     private final Channel channel;
     @Getter
     private volatile long lastReceivedTime;
     @Getter
     private volatile long lastSentTime;
 
-    public TrackerClient(String ip, int port) throws IOException {
+    public TrackerClient(String ip, int port, EventLoopGroupType.EventLoopContext ctx) throws IOException {
         this.lastReceivedTime = System.currentTimeMillis();
         this.lastSentTime = System.currentTimeMillis();
 
-        EventLoopGroupType groupType = EventLoopGroupType.getAvailableOf(EventLoopGroupType.Epoll);
-        group = groupType.newEventLoop(1);
         Bootstrap b = new Bootstrap();
-        b.group(group)
-                .channel(groupType.clientSocketCls)
+        b.group(ctx.getBoosGroup())
+                .channel(ctx.getType().clientSocketCls)
                 .option(ChannelOption.TCP_NODELAY, true)
                 .handler(new ChannelInitializer<Channel>() {
                     @Override
@@ -67,7 +64,6 @@ public class TrackerClient {
         ChannelFuture f = b.connect(ip, port);
         try {
             if (!f.await(TimeUnit.SECONDS.toMillis(10))) {
-                group.shutdownGracefully();
                 throw new IOException("Connection timed out");
             }
         } catch (InterruptedException | IOException e) {
@@ -75,11 +71,11 @@ public class TrackerClient {
         }
 
         if (!f.isSuccess()) {
-            group.shutdownGracefully();
             throw new IOException(f.cause());
         }
 
         this.channel = f.channel();
+        ctx.getWorkerGroup().scheduleAtFixedRate(this::keep, 0, 2, TimeUnit.SECONDS);
     }
 
     public void login() throws InterruptedException {
@@ -130,5 +126,22 @@ public class TrackerClient {
             return channel.writeAndFlush(packet);
         }
         return null;
+    }
+
+    public synchronized void keep() {
+        var time = System.currentTimeMillis();
+        if (time - this.lastSentTime > TimeUnit.SECONDS.toMillis(4)) {
+            sendPacket(new NoInfoPacket());
+        }
+    }
+
+    @Override
+    public void hideRoom() {
+
+    }
+
+    @Override
+    public void showRoom() {
+
     }
 }

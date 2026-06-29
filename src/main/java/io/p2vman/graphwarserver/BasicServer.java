@@ -10,22 +10,24 @@ import io.p2vman.graphwarserver.card.CardGenerator;
 import io.p2vman.graphwarserver.card.StandardCardGenerator;
 import io.p2vman.graphwarserver.commands.CommandContext;
 import io.p2vman.graphwarserver.commands.Dispatcher;
+import io.p2vman.graphwarserver.events.Event;
 import io.p2vman.graphwarserver.handlers.HandshakeHandler;
 import io.p2vman.graphwarserver.packet.*;
 import io.p2vman.graphwarserver.packet.sc.*;
+import io.p2vman.graphwarserver.tracker.ITracker;
 import io.p2vman.graphwarserver.tracker.ServerStatusTracker;
 import io.p2vman.graphwarserver.util.EventLoopGroupType;
-import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectList;
 import lombok.Getter;
+import net.engio.mbassy.bus.MBassador;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.ListIterator;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -47,7 +49,8 @@ public class BasicServer {
     public final AtomicBoolean accept_clients = new AtomicBoolean(true);
 
     public final ObjectList<Player> players = new ObjectArrayList<>();
-    public final Int2ObjectMap<Avatar> avatars = new Int2ObjectArrayMap<>();
+
+    public final ObjectList<Avatar> avatars = new ObjectArrayList<>();
 
     public FuncType funcType = FuncType.NORMAL_FUNC;
     private final ServerStatusTracker tracker;
@@ -62,34 +65,37 @@ public class BasicServer {
 
     private final CardGenerator generator;
 
-    public BasicServer(int port, ServerStatusTracker tracker) {
+    private final EventLoopGroupType type;
+
+    @Getter
+    private final MBassador<Event> eventbus;
+    private final ITracker tapi;
+
+    public BasicServer(int port, ServerStatusTracker tracker, EventLoopGroup boss_group, EventLoopGroup worker_group, EventLoopGroupType type, ITracker tapi) {
+        this.eventbus = new MBassador<>();
         this.port = port;
         this.tracker = tracker;
         this.random = new SecureRandom();
         this.dispatcher = new Dispatcher();
         this.generator = new StandardCardGenerator(random, this);
+        this.boss_group = boss_group;
+        this.worker_group = worker_group;
+        this.type = type;
+        this.tapi = tapi;
     }
 
-    public void run(Consumer<Channel> callback) {
-        var group = EventLoopGroupType.getAvailable();
-        this.boss_group = group.newEventLoop();
-        this.worker_group = group.newEventLoop(4);
+    public ChannelFuture run(Consumer<Channel> callback) {
 
         try {
             ServerBootstrap b = new ServerBootstrap();
             b.group(boss_group, worker_group)
-                    .channel(group.serverSocketCls)
+                    .channel(type.serverSocketCls)
                     .childHandler(new ChannelInitializer<SocketChannel>()
                     {
                         @Override
                         protected void initChannel(SocketChannel ch)
                         {
                             ChannelPipeline p = ch.pipeline();
-
-                            //p.addLast(new IdleStateHandler(
-                            //        1, 0, 0,
-                            //        TimeUnit.SECONDS));
-
                             p.addLast(new LineBasedFrameDecoder(65536));
                             p.addLast(new StringDecoder(StandardCharsets.UTF_8));
                             p.addLast(new StringEncoder(StandardCharsets.UTF_8));
@@ -106,13 +112,11 @@ public class BasicServer {
             callback.accept(channel);
             worker_group.scheduleAtFixedRate(this::tick, 0, 1, TimeUnit.SECONDS);
             worker_group.scheduleAtFixedRate(this::keep, 0, 2, TimeUnit.SECONDS);
-            channel.closeFuture().sync();
+            return channel.closeFuture();
         } catch (Exception e) {
             LOGGER.warn("", e);
-            boss_group.close();
-            worker_group.close();
         }
-
+        throw new RuntimeException();
     }
 
     private boolean starting = false;
@@ -125,7 +129,7 @@ public class BasicServer {
             if (state == GameState.PRE_GAME) {
                 if (!starting) {
                     boolean st = true;
-                    for (Avatar value : avatars.values()) {
+                    for (Avatar value : avatars) {
                         if (!value.isReady()) {
                             st = false;
                             break;
@@ -150,44 +154,39 @@ public class BasicServer {
     }
 
     private void reorderPlayers() {
-        ObjectList<Avatar> team1 = new ObjectArrayList<>();
-        ObjectList<Avatar> team2 = new ObjectArrayList<>();
+        ObjectList<Avatar> newAvatars = new ObjectArrayList<>();
+        Team currentTeam = Team.LEFT;
 
-        for (Avatar player : avatars.values()) {
-            if (player.getTeam() == Team.LEFT) {
-                team1.add(player);
-            } else {
-                team2.add(player);
-            }
+        if (random.nextBoolean()) {
+            currentTeam = Team.RIGHT;
         }
 
-        ObjectList<Avatar> reordered = new ObjectArrayList<>(players.size());
+        ObjectList<Avatar> tempAvatars = new ObjectArrayList<>(avatars);
 
-        int team1Index = 0;
-        int team2Index = 0;
+        while (!tempAvatars.isEmpty()) {
+            ListIterator<Avatar> pitr = tempAvatars.listIterator();
+            boolean found = false;
 
-        boolean team1Turn = random.nextBoolean();
+            while (pitr.hasNext()) {
+                Avatar avatar = pitr.next();
 
-        while (team1Index < team1.size() || team2Index < team2.size()) {
-            if (team1Turn) {
-                if (team1Index < team1.size()) {
-                    reordered.add(team1.get(team1Index++));
-                } else {
-                    reordered.add(team2.get(team2Index++));
-                }
-            } else {
-                if (team2Index < team2.size()) {
-                    reordered.add(team2.get(team2Index++));
-                } else {
-                    reordered.add(team1.get(team1Index++));
+                if (avatar.getTeam() == currentTeam) {
+                    pitr.remove();
+                    newAvatars.add(avatar);
+                    currentTeam = (currentTeam == Team.LEFT) ? Team.RIGHT : Team.LEFT;
+                    found = true;
                 }
             }
 
-            team1Turn = !team1Turn;
+            if (!found) {
+                currentTeam = (currentTeam == Team.LEFT) ? Team.RIGHT : Team.LEFT;
+            }
         }
 
+        avatars.clear();
+        avatars.addAll(newAvatars);
 
-        sendPacketAll(new ReorderPacket(reordered));
+        sendPacketAll(new ReorderPacket(avatars));
     }
 
     public void startGame() {
@@ -196,9 +195,10 @@ public class BasicServer {
         reorderPlayers();
 
         var b = this.generator.generateCircles();
-        var d = this.generator.generateSoldiers(b, this.avatars.values());
+        var d = this.generator.generateSoldiers(b, this.avatars);
         LOGGER.warn("b={},d={}", b, d);
 
+        tapi.hideRoom();
         this.sendPacketAll(new StartGamePacket(b.length,
                 Arrays.asList(b),
                 Arrays.asList(d), 0));
@@ -217,7 +217,7 @@ public class BasicServer {
 
     public Avatar addPlayer(Player player) {
         var name = player.getName();
-        for (Avatar value : avatars.values()) {
+        for (Avatar value : avatars) {
             if (name.equals(value.getName())) {
                 player.disconnect();
                 return null;
@@ -235,9 +235,9 @@ public class BasicServer {
         }
 
         player.getAvatars().add(avatar);
-        this.avatars.put(avatar.getId(), avatar);
+        this.avatars.add(avatar);
         {
-            for (Avatar a : avatars.values()) if (!a.getName().equals(name)) {
+            for (Avatar a : avatars) if (!a.getName().equals(name)) {
                 var packet = new AddPlayerPacket(a.getId(), a.getName(), a.getTeam(), false, a.getNum_soldiers(), a.isReady());
                 player.sendPacketAndFlush(packet);
             }
@@ -257,7 +257,9 @@ public class BasicServer {
         this.players.add(player);
         this.tracker.onPlayerLogin(this, player);
         var avatar = this.addPlayer(player);
-        player.getAvatars().add(avatar);
+        if (avatar != null) {
+            player.getAvatars().add(avatar);
+        }
         this.tracker.sync(this);
         starting = false;
         return true;
@@ -267,7 +269,7 @@ public class BasicServer {
         if (player.isLogout()) return;
         this.players.remove(player);
         for (Avatar avatar : player.getAvatars()) {
-            this.avatars.remove(avatar.getId());
+            this.avatars.remove(avatar);
             this.sendPacketAll(new RemoveAvatarPacket(avatar.getId()));
         }
         LOGGER.info("Player {} log out", player.getName());
@@ -283,7 +285,7 @@ public class BasicServer {
 
     public synchronized void changeFuncType(Player player) {
         funcType = funcType.next();
-        for (Avatar avatar : avatars.values())
+        for (Avatar avatar : avatars)
             if (avatar.isReady()) {
                 avatar.setReady(false);
                 var packet = new SetReadyPacket(avatar.getId(), false);
@@ -301,8 +303,13 @@ public class BasicServer {
         var can = player.isLeader() || player.hasAvatar(avatar_id);
 
         if (can) {
-            this.avatars.get(avatar_id).setReady(ready);
-            sendPacketAll(new SetReadyPacket(avatar_id, ready));
+            for (Avatar avatar : avatars) {
+                if (avatar.getId() == avatar_id) {
+                    avatar.setReady(ready);
+                    sendPacketAll(new SetReadyPacket(avatar_id, ready));
+                    break;
+                }
+            }
         }
     }
 
@@ -320,8 +327,8 @@ public class BasicServer {
 
     public synchronized void removeAvatar(Player player, int id) {
         boolean can = player.isLeader() || player.hasAvatar(id);
-        if (can && this.avatars.containsKey(id)) {
-            this.avatars.remove(id);
+        if (can) {
+            avatars.removeIf(avatar -> avatar.getId() == id);
             sendPacketAll(new RemoveAvatarPacket(id));
         }
         setAllNoReady();
@@ -332,7 +339,7 @@ public class BasicServer {
             sendError(player, "rif");
             return;
         }
-        for (Avatar value : avatars.values()) {
+        for (Avatar value : avatars) {
             if (name.equals(value.getName())) {
                 sendError(player, "nae");
                 return;
@@ -345,7 +352,7 @@ public class BasicServer {
             player.setLeader(true);
         }
         player.getAvatars().add(avatar);
-        this.avatars.put(avatar.getId(), avatar);
+        this.avatars.add(avatar);
         var packet = new AddPlayerPacket(avatar.getId(), avatar.getName(), avatar.getTeam(), false, avatar.getNum_soldiers(), avatar.isReady());
 
         this.sendPacketAllExclude(packet, player);
@@ -379,9 +386,13 @@ public class BasicServer {
         }
         var can = player.isLeader() || player.hasAvatar(target);
         if (can) {
-            Avatar avatar = this.avatars.get(target);
-            avatar.setTeam(team);
-            this.sendPacketAll(new SetTeamPacket(target, team));
+            for (Avatar avatar : avatars) {
+                if (avatar.getId() == target) {
+                    avatar.setTeam(team);
+                    this.sendPacketAll(new SetTeamPacket(target, team));
+                    break;
+                }
+            }
         }
         setAllNoReady();
     }
@@ -442,6 +453,7 @@ public class BasicServer {
     public void doPreGame() {
         state = GameState.PRE_GAME;
         accept_clients.set(true);
+        tapi.showRoom();
     }
 
     public void setAllNoReady() {
@@ -454,4 +466,23 @@ public class BasicServer {
             }
         }
     }
-}  
+
+    public synchronized void addSoldier(Player player, int id) {
+        if (player.hasAvatar(id) || player.isLeader()) {
+            var avatar = getAvatarById(id);
+            if (avatar != null) {
+                if (avatar.getNum_soldiers()<4) {
+                    avatar.setNum_soldiers(avatar.getNum_soldiers()+1);
+                    sendPacketAll(new AddSoldierPacket(id));
+                }
+            }
+        }
+    }
+
+    public Avatar getAvatarById(int id) {
+        for (Avatar avatar : avatars) {
+            if (avatar.getId() == id) return avatar;
+        }
+        return null;
+    }
+}
