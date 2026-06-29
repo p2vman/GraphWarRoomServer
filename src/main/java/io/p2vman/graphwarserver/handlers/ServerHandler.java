@@ -150,18 +150,6 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
     }
 
     @Override
-    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception
-    {
-        if (evt instanceof IdleStateEvent e) {
-            if (e.state() == IdleState.ALL_IDLE) {
-                LOGGER.warn("dis t {}", player.getName());
-                this.server.onPlayerLogOut(player);
-                ctx.close();
-            }
-        }
-    }
-
-    @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception
     {
         LOGGER.warn("dis i {}" , player.getName());

@@ -6,6 +6,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
+import io.p2vman.graphwarserver.lobby.handlers.LobbyHandshakeHandler;
 import io.p2vman.graphwarserver.packet.PacketEncoder;
 import io.p2vman.graphwarserver.util.EventLoopGroupType;
 import lombok.Getter;
@@ -42,7 +43,7 @@ public class LobbyServer implements AutoCloseable {
                             p.addLast(new StringDecoder(StandardCharsets.UTF_8));
                             p.addLast(new StringEncoder(StandardCharsets.UTF_8));
                             p.addLast(new PacketEncoder());
-
+                            p.addLast("handler", new LobbyHandshakeHandler(LobbyServer.this));
                         }
                     })
                     .option(ChannelOption.SO_BACKLOG, 128)
@@ -53,13 +54,21 @@ public class LobbyServer implements AutoCloseable {
             channel = f.channel();
             return channel.closeFuture();
         } catch (Exception e) {
-            LOGGER.warn("", e);
+            LOGGER.error("", e);
         }
         throw new RuntimeException();
     }
 
     @Override
     public void close() throws Exception {
+
+    }
+
+    public synchronized boolean onPlayerLogin(LobbyPlayer player) {
+        return false;
+    }
+
+    public synchronized void onPlayerLogOut(LobbyPlayer player) {
 
     }
 }

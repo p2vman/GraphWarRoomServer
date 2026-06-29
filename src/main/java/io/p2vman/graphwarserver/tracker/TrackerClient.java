@@ -18,7 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
-public class TrackerClient implements ITracker {
+public class TrackerClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(TrackerClient.class);
     private final Channel channel;
     @Getter
@@ -31,7 +31,7 @@ public class TrackerClient implements ITracker {
         this.lastSentTime = System.currentTimeMillis();
 
         Bootstrap b = new Bootstrap();
-        b.group(ctx.getBoosGroup())
+        b.group(ctx.getWorkerGroup())
                 .channel(ctx.getType().clientSocketCls)
                 .option(ChannelOption.TCP_NODELAY, true)
                 .handler(new ChannelInitializer<Channel>() {
@@ -87,7 +87,7 @@ public class TrackerClient implements ITracker {
     }
 
     private void handleMessage(String msg) {
-        System.out.println(msg);
+        LOGGER.debug(msg);
     }
 
     public void sendMessage(String message)
@@ -135,13 +135,4 @@ public class TrackerClient implements ITracker {
         }
     }
 
-    @Override
-    public void hideRoom() {
-
-    }
-
-    @Override
-    public void showRoom() {
-
-    }
 }

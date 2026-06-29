@@ -109,6 +109,7 @@ public class BasicServer {
 
             ChannelFuture f = b.bind(port).sync();
             channel = f.channel();
+            this.tapi.bind(port);
             callback.accept(channel);
             worker_group.scheduleAtFixedRate(this::tick, 0, 1, TimeUnit.SECONDS);
             worker_group.scheduleAtFixedRate(this::keep, 0, 2, TimeUnit.SECONDS);
@@ -135,7 +136,7 @@ public class BasicServer {
                             break;
                         }
                     }
-                    if (st) {
+                    if (st&&avatars.size()<2) {
                         starting = true;
                         time = 5;
                     }
@@ -251,7 +252,7 @@ public class BasicServer {
     }
 
     public synchronized boolean onPlayerLogin(Player player) {
-        if (this.players.contains(player)) {
+        if (this.players.contains(player) && this.avatars.size() >= 10) {
             return false;
         }
         this.players.add(player);
@@ -261,7 +262,8 @@ public class BasicServer {
             player.getAvatars().add(avatar);
         }
         this.tracker.sync(this);
-        starting = false;
+        setAllNoReady();
+        //player.sendPacket(new Ch);
         return true;
     }
 
@@ -281,6 +283,7 @@ public class BasicServer {
                 turn();
             }
         }
+        setAllNoReady();
     }
 
     public synchronized void changeFuncType(Player player) {
@@ -370,6 +373,7 @@ public class BasicServer {
     public void handleMessageAsync(Player player, int input_id, String message) {
         for (Avatar avatar : player.getAvatars()) {
             if (avatar.getId() == input_id) {
+                LOGGER.info("[{}:{}]: {}", player.getName(), input_id, message);
                 var ctx = new CommandContext(player, this);
                 if (!this.dispatcher.handleCommand(message, ctx)) {
                     this.sendPacketAll(new ChatMessagePacket(input_id, message));
@@ -454,6 +458,7 @@ public class BasicServer {
         state = GameState.PRE_GAME;
         accept_clients.set(true);
         tapi.showRoom();
+        tapi.sendRoomStatus(funcType, avatars.size());
     }
 
     public void setAllNoReady() {
@@ -465,6 +470,7 @@ public class BasicServer {
                 }
             }
         }
+        starting = false;
     }
 
     public synchronized void addSoldier(Player player, int id) {

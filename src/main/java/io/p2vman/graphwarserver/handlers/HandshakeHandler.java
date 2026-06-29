@@ -110,9 +110,6 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
         channel.attr(Player.PLAYER_ATTRIBUTE_KEY).set(player);
         pipeline.remove("handler");
         pipeline.addLast("handler", new ServerHandler(server, player));
-        for (Player player1 : this.server.players) {
-            player1.sendPacketAndFlush(new ChatMessagePacket(-1, "Handshake: " + name));
-        }
     }
 
     @Override
@@ -122,28 +119,10 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
         if (channel.hasAttr(Player.PLAYER_ATTRIBUTE_KEY)) {
             var attr = channel.attr(Player.PLAYER_ATTRIBUTE_KEY);
             this.server.onPlayerLogOut(attr.get());
-            ctx.close();
-            return;
         }
         ctx.close();
     }
 
-    @Override
-    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception
-    {
-        if (evt instanceof IdleStateEvent)
-        {
-            var channel = ctx.channel();
-
-            if (channel.hasAttr(Player.PLAYER_ATTRIBUTE_KEY)) {
-                var attr = channel.attr(Player.PLAYER_ATTRIBUTE_KEY);
-                this.server.onPlayerLogOut(attr.get());
-                ctx.close();
-                return;
-            }
-            ctx.close();
-        }
-    }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception

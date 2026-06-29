@@ -1,11 +1,11 @@
 package io.p2vman.graphwarserver;
 
-import io.p2vman.graphwarserver.packet.st.ChatMessagePacket;
-import io.p2vman.graphwarserver.packet.st.CreateRoomPacket;
 import io.p2vman.graphwarserver.packet.st.RoomStatusPacket;
 import io.p2vman.graphwarserver.tracker.ServerStatusTracker;
 import io.p2vman.graphwarserver.tracker.TrackerClient;
+import io.p2vman.graphwarserver.tracker.TrackerWrapper;
 import io.p2vman.graphwarserver.util.EventLoopGroupType;
+import io.p2vman.graphwarserver.util.TextBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,11 +15,16 @@ public class Main {
     private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        var ctx = EventLoopGroupType.getAvailable().asContext(4, 12);
+        var ctx = EventLoopGroupType.getAvailable().asContext(2, 12);
+        var ntb = new TextBuilder()
+                .setText("Custom room: ${index}");
 
         TrackerClient client = new TrackerClient("www.graphwar.com", 23761, ctx);
         client.login();
-        BasicServer server = new BasicServer(10000, new ServerStatusTracker() {
+        var w = new TrackerWrapper(client);
+
+
+        BasicServer server = new BasicServer(20001, new ServerStatusTracker() {
             @Override
             public void onPlayerLogin(BasicServer server, Player player) {
 
@@ -39,14 +44,16 @@ public class Main {
             public void sync(BasicServer server) {
                 client.sendPacket(new RoomStatusPacket(server.funcType, server.avatars.size()));
             }
-        }, ctx.getBoosGroup(), ctx.getWorkerGroup(), ctx.getType(), client);
+        }, ctx.getBoosGroup(), ctx.getWorkerGroup(), ctx.getType(), w);
+
+        //ntb.setVariable("index", 0).build()
+
         server.run((channel) -> {
-            try {
-                client.sendAsyncPacket(new CreateRoomPacket("Custom room", 10000)).await();
-                client.sendPacket(new RoomStatusPacket(server.funcType, server.avatars.size()));
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
+            w.createRoom(ntb
+                    .setVariable("index", 0)
+                    .build()
+            );
+            w.sendRoomStatus(server.funcType, server.avatars.size());
         });
 
     }

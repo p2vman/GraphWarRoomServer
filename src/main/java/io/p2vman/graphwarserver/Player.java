@@ -7,6 +7,7 @@ import io.p2vman.graphwarserver.packet.Packet;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
 import it.unimi.dsi.fastutil.objects.ReferenceList;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -14,9 +15,9 @@ import lombok.ToString;
 @ToString
 public class Player {
     public static final AttributeKey<Player> PLAYER_ATTRIBUTE_KEY = AttributeKey.newInstance("player");
-    private final String name;
+    private final @NonNull String name;
     @ToString.Exclude
-    private final Channel channel;
+    private final @NonNull Channel channel;
     @Setter
     private boolean logout;
     @Setter
@@ -30,7 +31,7 @@ public class Player {
     @Setter
     private boolean gameFinished = false;
 
-    public Player(final String name, final Channel channel) {
+    public Player(final @NonNull String name, final @NonNull Channel channel) {
         this.name = name;
         this.channel = channel;
         this.last_message = System.currentTimeMillis();
@@ -38,47 +39,29 @@ public class Player {
 
     public void sendMessageAndFlush(String message)
     {
-        String out = message + "\n";
-
-        if (channel != null)
-        {
-            this.last_message = System.currentTimeMillis();
-            channel.writeAndFlush(out);
-        }
+        this.last_message = System.currentTimeMillis();
+        channel.writeAndFlush(message + "\n");
     }
 
     public ChannelFuture sendAsyncMessage(String message)
     {
-        String out = message + "\n";
-
-        if (channel != null)
-        {
-            this.last_message = System.currentTimeMillis();
-            return channel.writeAndFlush(out);
-        }
-        return null;
+        this.last_message = System.currentTimeMillis();
+        return channel.writeAndFlush(message + "\n");
     }
 
     public void sendPacketAndFlush(Packet packet) {
-        if (channel != null) {
-            this.last_message = System.currentTimeMillis();
-            channel.writeAndFlush(packet);
-        }
+        this.last_message = System.currentTimeMillis();
+        channel.writeAndFlush(packet);
     }
 
     public void sendPacket(Packet packet) {
-        if (channel != null) {
-            this.last_message = System.currentTimeMillis();
-            channel.write(packet);
-        }
+        this.last_message = System.currentTimeMillis();
+        channel.write(packet);
     }
 
     public ChannelFuture sendAsyncPacket(Packet packet) {
-        if (channel != null) {
-            this.last_message = System.currentTimeMillis();
-            return channel.writeAndFlush(packet);
-        }
-        return null;
+        this.last_message = System.currentTimeMillis();
+        return channel.writeAndFlush(packet);
     }
 
     @Override
@@ -105,7 +88,6 @@ public class Player {
     }
 
     public void disconnect() {
-        System.out.println(StackWalker.getInstance().getCallerClass());
         channel.close();
     }
 }
