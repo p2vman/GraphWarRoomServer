@@ -5,8 +5,6 @@ import io.p2vman.graphwarserver.Player;
 import io.p2vman.graphwarserver.packet.sc.ChatMessagePacket;
 import lombok.Getter;
 import lombok.NonNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class CommandContext {
     @Getter
@@ -20,6 +18,6 @@ public class CommandContext {
     }
 
     public void sendMessage(String s) {
-        client.sendPacket(new ChatMessagePacket(-1, s));
+        client.sendPacketAndFlush(new ChatMessagePacket(-1, s));
     }
 }

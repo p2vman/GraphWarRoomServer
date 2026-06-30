@@ -11,16 +11,19 @@ import io.p2vman.graphwarserver.card.StandardCardGenerator;
 import io.p2vman.graphwarserver.commands.CommandContext;
 import io.p2vman.graphwarserver.commands.Dispatcher;
 import io.p2vman.graphwarserver.events.Event;
+import io.p2vman.graphwarserver.events.OnCommandsRegisterEvent;
+import io.p2vman.graphwarserver.events.OnPlayerLoginEvent;
 import io.p2vman.graphwarserver.handlers.HandshakeHandler;
 import io.p2vman.graphwarserver.packet.*;
 import io.p2vman.graphwarserver.packet.sc.*;
 import io.p2vman.graphwarserver.tracker.ITracker;
-import io.p2vman.graphwarserver.tracker.ServerStatusTracker;
 import io.p2vman.graphwarserver.util.EventLoopGroupType;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectList;
 import lombok.Getter;
 import net.engio.mbassy.bus.MBassador;
+import net.engio.mbassy.bus.config.BusConfiguration;
+import net.engio.mbassy.bus.config.Feature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,12 +37,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-public class BasicServer {
+public class BasicServer implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(BasicServer.class);
     @Getter
-    private EventLoopGroup boss_group;
+    private final EventLoopGroup boss_group;
     @Getter
-    private EventLoopGroup worker_group;
+    private final EventLoopGroup worker_group;
     @Getter
     private final int port;
     @Getter
@@ -53,7 +56,6 @@ public class BasicServer {
     public final ObjectList<Avatar> avatars = new ObjectArrayList<>();
 
     public FuncType funcType = FuncType.NORMAL_FUNC;
-    private final ServerStatusTracker tracker;
 
     private final Random random;
 
@@ -69,19 +71,25 @@ public class BasicServer {
 
     @Getter
     private final MBassador<Event> eventbus;
-    private final ITracker tapi;
+    @Getter
+    private final ITracker tracker;
 
-    public BasicServer(int port, ServerStatusTracker tracker, EventLoopGroup boss_group, EventLoopGroup worker_group, EventLoopGroupType type, ITracker tapi) {
-        this.eventbus = new MBassador<>();
-        this.port = port;
-        this.tracker = tracker;
+    public BasicServer(int port, EventLoopGroupType.EventLoopContext ctx, ITracker tapi) {
+        this.eventbus = new MBassador<>(new BusConfiguration()
+                .addFeature(Feature.SyncPubSub.Default())
+                .addFeature(Feature.AsynchronousHandlerInvocation.Default())
+                .addFeature(Feature.AsynchronousMessageDispatch.Default())
+                .addPublicationErrorHandler(error -> {
+                    LOGGER.error("Exception in event handler {}#{}", error.getHandler().getDeclaringClass().getName(), error.getHandler().getName(), error.getCause());
+                }));
+        this.port = port;;
         this.random = new SecureRandom();
         this.dispatcher = new Dispatcher();
         this.generator = new StandardCardGenerator(random, this);
-        this.boss_group = boss_group;
-        this.worker_group = worker_group;
-        this.type = type;
-        this.tapi = tapi;
+        this.boss_group = ctx.getBoosGroup();
+        this.worker_group = ctx.getWorkerGroup();
+        this.type = ctx.getType();
+        this.tracker = tapi;
     }
 
     public ChannelFuture run(Consumer<Channel> callback) {
@@ -109,10 +117,11 @@ public class BasicServer {
 
             ChannelFuture f = b.bind(port).sync();
             channel = f.channel();
-            this.tapi.bind(port);
+            this.tracker.bind(port);
             callback.accept(channel);
             worker_group.scheduleAtFixedRate(this::tick, 0, 1, TimeUnit.SECONDS);
             worker_group.scheduleAtFixedRate(this::keep, 0, 2, TimeUnit.SECONDS);
+            this.eventbus.post(new OnCommandsRegisterEvent(this.dispatcher));
             return channel.closeFuture();
         } catch (Exception e) {
             LOGGER.warn("", e);
@@ -125,7 +134,12 @@ public class BasicServer {
 
     public synchronized void tick() {
         try {
-            if (avatars.isEmpty()) return;
+            if (avatars.isEmpty() || avatars.size()<2) {
+                if (state == GameState.GAME) {
+                    finishGame();
+                }
+                return;
+            }
 
             if (state == GameState.PRE_GAME) {
                 if (!starting) {
@@ -136,7 +150,7 @@ public class BasicServer {
                             break;
                         }
                     }
-                    if (st&&avatars.size()<2) {
+                    if (st) {
                         starting = true;
                         time = 5;
                     }
@@ -199,7 +213,7 @@ public class BasicServer {
         var d = this.generator.generateSoldiers(b, this.avatars);
         LOGGER.warn("b={},d={}", b, d);
 
-        tapi.hideRoom();
+        tracker.hideRoom();
         this.sendPacketAll(new StartGamePacket(b.length,
                 Arrays.asList(b),
                 Arrays.asList(d), 0));
@@ -252,19 +266,23 @@ public class BasicServer {
     }
 
     public synchronized boolean onPlayerLogin(Player player) {
-        if (this.players.contains(player) && this.avatars.size() >= 10) {
+        if (this.players.contains(player) || this.avatars.size() >= 10) {
             return false;
         }
         this.players.add(player);
-        this.tracker.onPlayerLogin(this, player);
+        this.eventbus.publish(new OnPlayerLoginEvent(player, this));
         var avatar = this.addPlayer(player);
         if (avatar != null) {
             player.getAvatars().add(avatar);
         }
-        this.tracker.sync(this);
+        sendStatus();
         setAllNoReady();
         //player.sendPacket(new Ch);
         return true;
+    }
+
+    public void sendStatus() {
+        this.tracker.sendRoomStatus(funcType, avatars.size());
     }
 
     public synchronized void onPlayerLogOut(Player player) {
@@ -275,8 +293,7 @@ public class BasicServer {
             this.sendPacketAll(new RemoveAvatarPacket(avatar.getId()));
         }
         LOGGER.info("Player {} log out", player.getName());
-        this.tracker.onPlayerLogOut(this, player);
-        this.tracker.sync(this);
+        sendStatus();
         player.setLogout(true);
         if (state == GameState.GAME) {
             if (checkTurn()) {
@@ -297,8 +314,7 @@ public class BasicServer {
 
         var packet = new SetModePacket(funcType);
         for (Player player2 : players) player2.sendPacketAndFlush(packet);
-        this.tracker.changeFuncType(this, player, funcType);
-        this.tracker.sync(this);
+        sendStatus();
         setAllNoReady();
     }
 
@@ -361,7 +377,7 @@ public class BasicServer {
         this.sendPacketAllExclude(packet, player);
         player.sendPacketAndFlush(packet.withLocal(true));
 
-        this.tracker.sync(this);
+        sendStatus();
         setAllNoReady();
     }
 
@@ -449,6 +465,10 @@ public class BasicServer {
         for (Player player1 : players) {
             player1.setGameFinished(false);
         }
+        finishGame();
+    }
+
+    public void finishGame() {
         sendPacketAll(new GameFinishedPacket());
         setAllNoReady();
         doPreGame();
@@ -457,8 +477,13 @@ public class BasicServer {
     public void doPreGame() {
         state = GameState.PRE_GAME;
         accept_clients.set(true);
-        tapi.showRoom();
-        tapi.sendRoomStatus(funcType, avatars.size());
+        tracker.hideRoom().addListener(f -> {
+            tracker.showRoom().addListener(future -> {
+                if (future.isSuccess()) {
+                    tracker.sendRoomStatus(funcType, avatars.size());
+                }
+            });
+        });
     }
 
     public void setAllNoReady() {
@@ -490,5 +515,10 @@ public class BasicServer {
             if (avatar.getId() == id) return avatar;
         }
         return null;
+    }
+
+    @Override
+    public void close() throws Exception {
+
     }
 }

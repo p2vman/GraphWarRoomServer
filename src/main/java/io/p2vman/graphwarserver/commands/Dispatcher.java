@@ -20,7 +20,7 @@ public class Dispatcher {
 
     public int handle(String input, @NonNull CommandContext ctx) throws CommandException {
         if (input == null || input.trim().isEmpty()) {
-            throw new IllegalArgumentException("Input string cannot be empty");
+            throw new CommandException("Input string cannot be empty");
         }
         String[] tokens = input.trim().split("\\s+");
         String command = tokens[0];
@@ -37,6 +37,7 @@ public class Dispatcher {
             }
         } catch (CommandException e) {
             ctx.sendMessage(e.build());
+            return true;
         }
         return false;
     }

@@ -36,12 +36,14 @@ public class ServerHandler extends ChannelInboundHandlerAdapter {
         var channel = ctx.channel();
         String[] i = input_message.split("&");
 
-        LOGGER.debug("{}: {} < {}", player.getName(), input_message, i);
+        if (Integer.parseInt(i[0])!=10) {
+            LOGGER.debug("{}: {} < {}", player.getName(), input_message, i);
+        }
 
         switch (Integer.parseInt(i[0])) {
             case 39:
             {
-                LOGGER.warn("dis pe {}" , player.getName());
+                LOGGER.debug("dis pe {}" , player.getName());
                 this.server.onPlayerLogOut(player);
                 ctx.close();
                 break;

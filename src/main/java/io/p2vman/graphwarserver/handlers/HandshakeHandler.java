@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
 public class HandshakeHandler extends ChannelInboundHandlerAdapter {
     private static final Logger LOGGER = LoggerFactory.getLogger(HandshakeHandler.class);
 
-    private static final Pattern VALID_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9а-яА-ЯёЁ _-]+$");
+    private static final Pattern VALID_NAME_PATTERN =
+            Pattern.compile("^[\\p{IsLatin}\\p{IsCyrillic}\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}0-9 _-]+$");
 
 
     private static final String[] BANNED_WORDS = {
@@ -60,7 +61,8 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
 
         var name = URLDecoder.decode(n, StandardCharsets.UTF_8).trim();
 
-        if (name.length() < 3 || name.length() > 18) {
+        LOGGER.info("Handshake: {}", name);
+        if (name.length() < 3 || name.length() > 20) {
             LOGGER.warn("Handshake rejected: invalid length ({}) from {}", name.length(), channel.remoteAddress());
             ctx.close();
             return;
@@ -88,14 +90,13 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
             }
         }
 
-        LOGGER.info("Handshake: {}", name);
         if (!this.server.accept_clients.get()) {
             ctx.close();
             return;
         }
 
         var event = new OnHandshakeEvent(channel, name);
-        this.server.getEventbus().post(event);
+        this.server.getEventbus().publish(event);
         if (event.isCancel()) {
             ctx.close();
             return;

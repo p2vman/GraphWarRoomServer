@@ -1,0 +1,38 @@
+ports:
+  - 20001
+  - 20002
+  - 20003
+  - 20004
+  - 20005
+  - 20006
+
+eventLops:
+  boos:
+    threads: 4
+    name_pattern: "BoosThread-${index}"
+    daemon: true
+  worker:
+    threads: 12
+    name_pattern: "$WorkerThread-${index}"
+    daemon: true
+
+tracker:
+  host: "www.graphwar.com"
+  port: 23761
+  auto_reconnect: true
+
+servers:
+  - name: "Community room: 1"
+  - name: "Community room: 2"
+  - name: "Community room: 3"
+  - name: "Community room: 4"
+  - name: "Community room: 5"
+  - name: "Community room: 6"
+
+
+metrics:
+  enable: true
+  host: "http://192.168.1.103:8086"
+  token: "MS3DWKvwrptVyeeHKIkk9NJNrfIJiCEuO__Q4KMF9zA_H-V2OMAqJtD7K7PZQN-0tWQzPRNNDgEj9EOhbkDonQ=="
+  bucket: "data"
+  org: "none"
