@@ -10,15 +10,29 @@ import lombok.Getter;
 import lombok.NonNull;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Getter
 public class TrackerWrapper implements ITracker {
     private final TrackerClient client;
     private String room_name = null;
     private Integer port = null;
+    private final AtomicBoolean listed = new AtomicBoolean(false);
+    private FuncType last_type = FuncType.NORMAL_FUNC;
+    private int last_online = 0;
 
     public TrackerWrapper(@NonNull TrackerClient client) {
         this.client = client;
+        this.client.setReconnectTrigger((cl) -> {
+            try {
+                cl.login();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            createRoom(null).addListener(future -> {
+                sendRoomStatus(last_type, last_online);
+            });
+        });
     }
 
     @Override
@@ -38,7 +52,9 @@ public class TrackerWrapper implements ITracker {
         }
         Objects.requireNonNull(port);
         Objects.requireNonNull(room_name);
-        return this.client.sendAsyncPacket(new CreateRoomPacket(this.room_name, port));
+        return this.client.sendAsyncPacket(new CreateRoomPacket(this.room_name, port)).addListener(future -> {
+            this.listed.set(true);
+        });
     }
 
     @Override
@@ -49,11 +65,15 @@ public class TrackerWrapper implements ITracker {
 
     @Override
     public ChannelFuture closeRoom() {
-        return this.client.sendAsyncPacket(new CloseRoomPacket());
+        return this.client.sendAsyncPacket(new CloseRoomPacket()).addListener(future -> {
+            this.listed.set(false);
+        });
     }
 
     @Override
     public ChannelFuture sendRoomStatus(FuncType type, int online) {
+        this.last_online = online;
+        this.last_type = type;
         return this.client.sendAsyncPacket(new RoomStatusPacket(type, online));
     }
 

@@ -31,6 +31,9 @@ public class Dispatcher {
 
     public boolean handleCommand(@NonNull String input, @NonNull CommandContext ctx) {
         try {
+            if (input.startsWith("-")) {
+                ctx.sendMessage("on this server the command prefix has been changed from '-' to '/'");
+            }
             if (input.startsWith("/")) {
                 handle(input.substring(1), ctx);
                 return true;

@@ -1,6 +1,5 @@
 package io.p2vman.graphwarserver;
 
-import com.influxdb.client.write.Point;
 import io.netty.channel.EventLoopGroup;
 import io.p2vman.graphwarserver.events.OnCommandsRegisterEvent;
 import io.p2vman.graphwarserver.events.OnPlayerLoginEvent;
@@ -104,7 +103,8 @@ public class Main implements AutoCloseable {
             int port = pool.bind();
             wrapper.bind(port);
             wrapper.bind(server.name);
-            servers.add(new BasicServer(port, ctx, wrapper));
+            var srv = new BasicServer(port, ctx, wrapper);
+            servers.add(srv);
         }
     }
 
@@ -116,14 +116,16 @@ public class Main implements AutoCloseable {
                 tracker.createRoom(null).addListener(future -> {
                     tracker.sendRoomStatus(server.funcType, server.avatars.size());
                 });
+
                 ctx.getWorkerGroup().scheduleAtFixedRate(() -> {
-                    MetricsClient.getInstance().runWithBlocking(blocking -> {
-                        Point point = Point.measurement("servers")
+                    MetricsClient.getInstance().run((client -> {
+                        client.send(new MetricsClient.PointBuilder("servers")
                                 .addTag("server", Objects.requireNonNull(tracker.getName()))
                                 .addField("online", server.players.size())
-                                .addField("avatars", server.avatars.size());
-                        blocking.writePoint(point);
-                    });
+                                .addField("avatars", server.avatars.size() - server.players.size())
+                        );
+                    }));
+
                 }, 0, 1, TimeUnit.SECONDS);
             });
         }
@@ -131,11 +133,33 @@ public class Main implements AutoCloseable {
             LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(1));
         }
     }
-
     @Handler
     public void onCommandsRegister(OnCommandsRegisterEvent event) {
         var dispatcher = event.getDispatcher();
 
+        dispatcher.register("skip", (ctx1, arguments, command) -> {
+            var server = ctx1.getServer();
+            var player = ctx1.getClient();
+            if (server.getState() == GameState.GAME) {
+                server.sync(() -> {
+                    player.put(BasicServer.PLAYER_GAME_SKIP_ATTRIBUTE_KEY, true);
+                    ctx1.sendMessage("You voted for skip");
+                    for (Player player1 : server.players) {
+                        if (!player1.contains(BasicServer.PLAYER_GAME_SKIP_ATTRIBUTE_KEY) || !player1.get(BasicServer.PLAYER_GAME_SKIP_ATTRIBUTE_KEY)) {
+                            return;
+                        }
+                    }
+                    for (Player player1 : server.players) {
+                        player1.put(BasicServer.PLAYER_GAME_SKIP_ATTRIBUTE_KEY, false);
+                    }
+                    LOGGER.info("Skip game");
+                    server.finishGame();
+                });
+            } else {
+                ctx1.sendMessage("this command works only during the game");
+            }
+            return 0;
+        });
     }
 
     @Handler

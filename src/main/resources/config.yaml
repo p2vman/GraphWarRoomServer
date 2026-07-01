@@ -13,7 +13,7 @@ eventLops:
     daemon: true
   worker:
     threads: 12
-    name_pattern: "$WorkerThread-${index}"
+    name_pattern: "WorkerThread-${index}"
     daemon: true
 
 tracker:
@@ -29,10 +29,10 @@ servers:
   - name: "Community room: 5"
   - name: "Community room: 6"
 
-
 metrics:
   enable: true
-  host: "http://192.168.1.103:8086"
-  token: "MS3DWKvwrptVyeeHKIkk9NJNrfIJiCEuO__Q4KMF9zA_H-V2OMAqJtD7K7PZQN-0tWQzPRNNDgEj9EOhbkDonQ=="
-  bucket: "data"
+  host: "http://46.201.210.237:8086"
+  token: "5R9t1_b1QsW4BT9Krz0Qu7N9mIEBsvb-lUeRtaPI1GN8tNPcQJ-QKxCfzCmEz_pDMwgJ623o99zn7hoLe_Hj2A=="
+  bucket: "shared"
   org: "none"
+

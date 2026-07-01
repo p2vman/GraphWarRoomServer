@@ -13,12 +13,7 @@ public class CommandException extends RuntimeException {
 
     public String build() {
         StringBuilder builder = new StringBuilder();
-        builder.append(getMessage()).append("\n");
-        for (StackTraceElement stackTraceElement : getStackTrace()) {
-            var c = stackTraceElement.getClassName();
-            if (c.equals("io.netty.handler.codec.MessageToMessageDecoder")) break;
-            builder.append(c).append(".").append(stackTraceElement.getMethodName()).append("#").append(stackTraceElement.getLineNumber()).append("\n");
-        }
+        builder.append(getMessage());
         return builder.toString();
     }
 }

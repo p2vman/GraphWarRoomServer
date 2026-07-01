@@ -62,7 +62,7 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
         var name = URLDecoder.decode(n, StandardCharsets.UTF_8).trim();
 
         LOGGER.info("Handshake: {}", name);
-        if (name.length() < 3 || name.length() > 20) {
+        if (name.length() < 2 || name.length() > 20) {
             LOGGER.warn("Handshake rejected: invalid length ({}) from {}", name.length(), channel.remoteAddress());
             ctx.close();
             return;

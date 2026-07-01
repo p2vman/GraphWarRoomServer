@@ -2,8 +2,11 @@ package io.p2vman.graphwarserver;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
-import io.netty.util.AttributeKey;
+import io.p2vman.graphwarserver.misc.AttributeKey;
+import io.p2vman.graphwarserver.misc.IAttributeMap;
 import io.p2vman.graphwarserver.packet.Packet;
+import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
 import it.unimi.dsi.fastutil.objects.ReferenceList;
 import lombok.Getter;
@@ -13,8 +16,8 @@ import lombok.ToString;
 
 @Getter
 @ToString
-public class Player {
-    public static final AttributeKey<Player> PLAYER_ATTRIBUTE_KEY = AttributeKey.newInstance("player");
+public class Player implements IAttributeMap {
+    public static final io.netty.util.AttributeKey<Player> PLAYER_ATTRIBUTE_KEY = io.netty.util.AttributeKey.newInstance("player");
     private final @NonNull String name;
     @ToString.Exclude
     private final @NonNull Channel channel;
@@ -30,6 +33,8 @@ public class Player {
     private boolean readyToNextTurn = false;
     @Setter
     private boolean gameFinished = false;
+
+    private final Object2ObjectMap<AttributeKey<?>, Object> attributes = new Object2ObjectOpenHashMap<>();
 
     public Player(final @NonNull String name, final @NonNull Channel channel) {
         this.name = name;
@@ -89,5 +94,24 @@ public class Player {
 
     public void disconnect() {
         channel.close();
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T get(AttributeKey<T> key) {
+        return (T) attributes.get(key);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T put(AttributeKey<T> key, T value) {
+        return (T) attributes.put(key, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T remove(AttributeKey<T> key) {
+        return (T) attributes.remove(key);
+    }
+
+    public boolean contains(AttributeKey<?> key) {
+        return attributes.containsKey(key);
     }
 }

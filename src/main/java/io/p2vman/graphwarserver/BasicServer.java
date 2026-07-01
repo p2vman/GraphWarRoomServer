@@ -14,6 +14,7 @@ import io.p2vman.graphwarserver.events.Event;
 import io.p2vman.graphwarserver.events.OnCommandsRegisterEvent;
 import io.p2vman.graphwarserver.events.OnPlayerLoginEvent;
 import io.p2vman.graphwarserver.handlers.HandshakeHandler;
+import io.p2vman.graphwarserver.misc.AttributeKey;
 import io.p2vman.graphwarserver.packet.*;
 import io.p2vman.graphwarserver.packet.sc.*;
 import io.p2vman.graphwarserver.tracker.ITracker;
@@ -39,6 +40,9 @@ import java.util.function.Consumer;
 
 public class BasicServer implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(BasicServer.class);
+    private static final AtomicInteger playerID = new AtomicInteger(0);
+    public static final AttributeKey<Boolean> PLAYER_GAME_SKIP_ATTRIBUTE_KEY = AttributeKey.valueOf("player_game_skip");
+
     @Getter
     private final EventLoopGroup boss_group;
     @Getter
@@ -48,7 +52,6 @@ public class BasicServer implements AutoCloseable {
     @Getter
     private Channel channel;
 
-    private static final AtomicInteger playerID = new AtomicInteger(0);
     public final AtomicBoolean accept_clients = new AtomicBoolean(true);
 
     public final ObjectList<Player> players = new ObjectArrayList<>();
@@ -59,6 +62,7 @@ public class BasicServer implements AutoCloseable {
 
     private final Random random;
 
+    @Getter
     private GameState state = GameState.PRE_GAME;
 
     private long timeTurnStarted;
@@ -82,7 +86,7 @@ public class BasicServer implements AutoCloseable {
                 .addPublicationErrorHandler(error -> {
                     LOGGER.error("Exception in event handler {}#{}", error.getHandler().getDeclaringClass().getName(), error.getHandler().getName(), error.getCause());
                 }));
-        this.port = port;;
+        this.port = port;
         this.random = new SecureRandom();
         this.dispatcher = new Dispatcher();
         this.generator = new StandardCardGenerator(random, this);
@@ -121,7 +125,7 @@ public class BasicServer implements AutoCloseable {
             callback.accept(channel);
             worker_group.scheduleAtFixedRate(this::tick, 0, 1, TimeUnit.SECONDS);
             worker_group.scheduleAtFixedRate(this::keep, 0, 2, TimeUnit.SECONDS);
-            this.eventbus.post(new OnCommandsRegisterEvent(this.dispatcher));
+            this.eventbus.publishAsync(new OnCommandsRegisterEvent(this.dispatcher));
             return channel.closeFuture();
         } catch (Exception e) {
             LOGGER.warn("", e);
@@ -469,6 +473,17 @@ public class BasicServer implements AutoCloseable {
     }
 
     public void finishGame() {
+        for (Player player1 : players) {
+            player1.setReadyToNextTurn(false);
+        }
+        for (Player player1 : players) {
+            player1.setGameFinished(false);
+        }
+        for (Player player : players) {
+            if (player.contains(PLAYER_GAME_SKIP_ATTRIBUTE_KEY)) {
+                player.remove(PLAYER_GAME_SKIP_ATTRIBUTE_KEY);
+            }
+        }
         sendPacketAll(new GameFinishedPacket());
         setAllNoReady();
         doPreGame();
@@ -520,5 +535,9 @@ public class BasicServer implements AutoCloseable {
     @Override
     public void close() throws Exception {
 
+    }
+
+    public synchronized void sync(Runnable runnable) {
+        runnable.run();
     }
 }

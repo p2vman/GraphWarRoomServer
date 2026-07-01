@@ -10,6 +10,7 @@ import io.p2vman.graphwarserver.packet.sc.NoInfoPacket;
 import io.p2vman.graphwarserver.packet.Packet;
 import io.p2vman.graphwarserver.packet.PacketEncoder;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,7 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 
 public class TrackerClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(TrackerClient.class);
@@ -31,6 +33,10 @@ public class TrackerClient {
     private final EventLoopGroupType.EventLoopContext ctx;
     private final String ip;
     private final int port;
+
+    @Setter
+    @Getter
+    private Consumer<TrackerClient> reconnectTrigger = null;
 
     public TrackerClient(String ip, int port, EventLoopGroupType.EventLoopContext ctx) throws IOException {
         this.lastReceivedTime = System.currentTimeMillis();
@@ -46,7 +52,6 @@ public class TrackerClient {
         var f = sendAsyncMessage("23E(S_%24%40)!Xc");
         if (f != null) {
             f.await();
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(2));
         }
     }
 
@@ -102,6 +107,9 @@ public class TrackerClient {
         }
         if (!channel.isActive()) {
             reconnect();
+            if (reconnectTrigger != null) {
+                reconnectTrigger.accept(this);
+            }
         }
     }
 
