@@ -11,6 +11,7 @@ public class Config {
     public Tracker tracker;
     public List<Server> servers;
     public Metrics metrics;
+    public String[] welcome_messages;
 
     @ToString
     public static class EventLoops {

@@ -29,10 +29,15 @@ servers:
   - name: "Community room: 5"
   - name: "Community room: 6"
 
+#InfluxDB
 metrics:
   enable: true
   host: "http://46.201.210.237:8086"
   token: "5R9t1_b1QsW4BT9Krz0Qu7N9mIEBsvb-lUeRtaPI1GN8tNPcQJ-QKxCfzCmEz_pDMwgJ623o99zn7hoLe_Hj2A=="
   bucket: "shared"
   org: "none"
+
+welcome_messages:
+  - ""
+
 

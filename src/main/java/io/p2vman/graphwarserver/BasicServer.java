@@ -11,14 +11,18 @@ import io.p2vman.graphwarserver.card.StandardCardGenerator;
 import io.p2vman.graphwarserver.commands.CommandContext;
 import io.p2vman.graphwarserver.commands.Dispatcher;
 import io.p2vman.graphwarserver.events.Event;
+import io.p2vman.graphwarserver.events.OnAsyncChatMessageEvent;
 import io.p2vman.graphwarserver.events.OnCommandsRegisterEvent;
 import io.p2vman.graphwarserver.events.OnPlayerLoginEvent;
 import io.p2vman.graphwarserver.handlers.HandshakeHandler;
 import io.p2vman.graphwarserver.misc.AttributeKey;
 import io.p2vman.graphwarserver.packet.*;
 import io.p2vman.graphwarserver.packet.sc.*;
+import io.p2vman.graphwarserver.registry.Identifier;
 import io.p2vman.graphwarserver.tracker.ITracker;
 import io.p2vman.graphwarserver.util.EventLoopGroupType;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectList;
 import lombok.Getter;
@@ -30,9 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
-import java.util.Arrays;
-import java.util.ListIterator;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,6 +62,7 @@ public class BasicServer implements AutoCloseable {
 
     public FuncType funcType = FuncType.NORMAL_FUNC;
 
+    @Getter
     private final Random random;
 
     @Getter
@@ -67,10 +70,13 @@ public class BasicServer implements AutoCloseable {
 
     private long timeTurnStarted;
 
+    @Getter
     private final Dispatcher dispatcher;
 
-    private final CardGenerator generator;
+    @Getter
+    private CardGenerator generator;
 
+    @Getter
     private final EventLoopGroupType type;
 
     @Getter
@@ -89,11 +95,16 @@ public class BasicServer implements AutoCloseable {
         this.port = port;
         this.random = new SecureRandom();
         this.dispatcher = new Dispatcher();
-        this.generator = new StandardCardGenerator(random, this);
+        this.generator = nextGenerator();
         this.boss_group = ctx.getBoosGroup();
         this.worker_group = ctx.getWorkerGroup();
         this.type = ctx.getType();
         this.tracker = tapi;
+    }
+
+    public CardGenerator nextGenerator() {
+        Identifier[] keys = Registries.CARD_GENERATORS.getKeys().toArray(new Identifier[0]);
+        return Registries.CARD_GENERATORS.get(keys[random.nextInt(keys.length)]).create(random, this);
     }
 
     public ChannelFuture run(Consumer<Channel> callback) {
@@ -210,17 +221,36 @@ public class BasicServer implements AutoCloseable {
 
     public void startGame() {
         accept_clients.set(false);
-        LOGGER.info("Starting game: no longer accepting new connections");
+        LOGGER.info("The game starts, we don't accept anymore connected");
+        this.sendChatMessageAll("The game starts, we don't accept anymore connected");
         reorderPlayers();
 
         var b = this.generator.generateCircles();
         var d = this.generator.generateSoldiers(b, this.avatars);
-        LOGGER.warn("b={},d={}", b, d);
 
         tracker.hideRoom();
+
+        IntList validIndexes = new IntArrayList(avatars.size());
+
+        for (int i = 0; i < avatars.size(); i++) {
+            if (avatars.get(i).getNum_soldiers() > 0) {
+                validIndexes.add(i);
+            }
+        }
+
+        if (validIndexes.isEmpty()) {
+            accept_clients.set(true);
+            LOGGER.info("Launch canceled as no valid players were found");
+            this.sendChatMessageAll("Launch canceled as no valid players were found");
+            this.tracker.showRoom();
+            return;
+        }
+
+        int startPlayer = validIndexes.getInt(random.nextInt(validIndexes.size()));
+
         this.sendPacketAll(new StartGamePacket(b.length,
                 Arrays.asList(b),
-                Arrays.asList(d), 0));
+                Arrays.asList(d), startPlayer));
         state = GameState.GAME;
     }
 
@@ -309,13 +339,6 @@ public class BasicServer implements AutoCloseable {
 
     public synchronized void changeFuncType(Player player) {
         funcType = funcType.next();
-        for (Avatar avatar : avatars)
-            if (avatar.isReady()) {
-                avatar.setReady(false);
-                var packet = new SetReadyPacket(avatar.getId(), false);
-                for (Player player2 : players) player2.sendPacketAndFlush(packet);
-            }
-
         var packet = new SetModePacket(funcType);
         for (Player player2 : players) player2.sendPacketAndFlush(packet);
         sendStatus();
@@ -396,7 +419,9 @@ public class BasicServer implements AutoCloseable {
                 LOGGER.info("[{}:{}]: {}", player.getName(), input_id, message);
                 var ctx = new CommandContext(player, this);
                 if (!this.dispatcher.handleCommand(message, ctx)) {
-                    this.sendPacketAll(new ChatMessagePacket(input_id, message));
+                    var event = new OnAsyncChatMessageEvent(player, message, avatar);
+                    if (event.isCancel()) break;
+                    this.sendPacketAll(new ChatMessagePacket(input_id, event.getMessage()));
                 }
                 break;
             }
@@ -499,6 +524,7 @@ public class BasicServer implements AutoCloseable {
                 }
             });
         });
+        this.generator = nextGenerator();
     }
 
     public void setAllNoReady() {
@@ -539,5 +565,9 @@ public class BasicServer implements AutoCloseable {
 
     public synchronized void sync(Runnable runnable) {
         runnable.run();
+    }
+
+    public void sendChatMessageAll(String message) {
+        this.sendPacketAll(new ChatMessagePacket(-1, message));
     }
 }

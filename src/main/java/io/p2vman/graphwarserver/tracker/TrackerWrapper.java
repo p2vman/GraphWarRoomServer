@@ -30,7 +30,9 @@ public class TrackerWrapper implements ITracker {
                 throw new RuntimeException(e);
             }
             createRoom(null).addListener(future -> {
-                sendRoomStatus(last_type, last_online);
+                if (future.isSuccess()) {
+                    sendRoomStatus(last_type, last_online);
+                }
             });
         });
     }
@@ -53,7 +55,9 @@ public class TrackerWrapper implements ITracker {
         Objects.requireNonNull(port);
         Objects.requireNonNull(room_name);
         return this.client.sendAsyncPacket(new CreateRoomPacket(this.room_name, port)).addListener(future -> {
-            this.listed.set(true);
+            if (future.isSuccess()) {
+                this.listed.set(true);
+            }
         });
     }
 
@@ -66,7 +70,9 @@ public class TrackerWrapper implements ITracker {
     @Override
     public ChannelFuture closeRoom() {
         return this.client.sendAsyncPacket(new CloseRoomPacket()).addListener(future -> {
-            this.listed.set(false);
+            if (future.isSuccess()) {
+                this.listed.set(false);
+            }
         });
     }
 

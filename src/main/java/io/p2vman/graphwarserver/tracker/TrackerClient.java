@@ -58,7 +58,7 @@ public class TrackerClient {
     private void handleMessage(String msg) {
         String[] i = msg.split("&");
         if (Integer.parseInt(i[0])!=10) {
-            LOGGER.debug(msg);
+            //LOGGER.debug(msg);
         }
     }
 
@@ -106,6 +106,7 @@ public class TrackerClient {
             sendPacket(new NoInfoPacket());
         }
         if (!channel.isActive()) {
+            LOGGER.warn("Reconnect");
             reconnect();
             if (reconnectTrigger != null) {
                 reconnectTrigger.accept(this);

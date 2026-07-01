@@ -5,6 +5,7 @@ import io.p2vman.graphwarserver.events.OnCommandsRegisterEvent;
 import io.p2vman.graphwarserver.events.OnPlayerLoginEvent;
 import io.p2vman.graphwarserver.metircs.MetricsClient;
 import io.p2vman.graphwarserver.packet.sc.ChatMessagePacket;
+import io.p2vman.graphwarserver.plugin.Plugin;
 import io.p2vman.graphwarserver.tracker.TrackerClient;
 import io.p2vman.graphwarserver.tracker.TrackerWrapper;
 import io.p2vman.graphwarserver.util.EventLoopGroupType;
@@ -24,7 +25,9 @@ import org.yaml.snakeyaml.constructor.Constructor;
 import java.io.File;
 import java.io.FileReader;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.Objects;
+import java.util.ServiceLoader;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
@@ -71,6 +74,10 @@ public class Main implements AutoCloseable {
 
     private final ObjectList<BasicServer> servers;
 
+    private final List<Plugin> plugins;
+
+    private final Config config;
+
     public Main() throws Exception {
         File file = new File("./config.yaml");
         if (!file.exists()) {
@@ -81,7 +88,6 @@ public class Main implements AutoCloseable {
         Constructor constructor = new Constructor(Config.class, options);
         Yaml yaml = new Yaml(constructor);
 
-        Config config;
         try (FileReader reader = new FileReader(file)) {
             config = yaml.load(reader);
         }
@@ -106,6 +112,12 @@ public class Main implements AutoCloseable {
             var srv = new BasicServer(port, ctx, wrapper);
             servers.add(srv);
         }
+
+        this.plugins = new ObjectArrayList<>();
+        for (Plugin plugin : ServiceLoader.load(Plugin.class)) {
+            plugin.init(ctx);
+            this.plugins.add(plugin);
+        }
     }
 
     public void main() throws Exception {
@@ -127,12 +139,18 @@ public class Main implements AutoCloseable {
                     }));
 
                 }, 0, 1, TimeUnit.SECONDS);
+
+                for (Plugin plugin : plugins) {
+                    LOGGER.info("Load plugin: {}", plugin.getClass().getName());
+                    plugin.onServerStarting(server);;
+                }
             });
         }
         while (true) {
             LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(1));
         }
     }
+
     @Handler
     public void onCommandsRegister(OnCommandsRegisterEvent event) {
         var dispatcher = event.getDispatcher();
@@ -142,6 +160,11 @@ public class Main implements AutoCloseable {
             var player = ctx1.getClient();
             if (server.getState() == GameState.GAME) {
                 server.sync(() -> {
+                    if (player.contains(BasicServer.PLAYER_GAME_SKIP_ATTRIBUTE_KEY) && player.get(BasicServer.PLAYER_GAME_SKIP_ATTRIBUTE_KEY)) {
+                        ctx1.sendMessage("you have already voted for skip");
+                        return;
+                    }
+
                     player.put(BasicServer.PLAYER_GAME_SKIP_ATTRIBUTE_KEY, true);
                     ctx1.sendMessage("You voted for skip");
                     for (Player player1 : server.players) {
@@ -164,7 +187,13 @@ public class Main implements AutoCloseable {
 
     @Handler
     public void onPlayerLogin(OnPlayerLoginEvent event) {
-        event.getPlayer().sendPacketAndFlush(new ChatMessagePacket(-1, "This is a test server written from scratch, so please report any bugs to https://github.com/p2vman/GraphWarRoomServer"));
+        event.getPlayer().sendPacketAndFlush(new ChatMessagePacket(-1, "This server is written from scratch, so please report any bugs at https://github.com/p2vman/GraphWarRoomServer"));
+        if (config.welcome_messages == null) return;
+        for (String welcomeMessage : config.welcome_messages) {
+            welcomeMessage = welcomeMessage.trim();
+            if (welcomeMessage.isEmpty()) continue;
+            event.getPlayer().sendPacketAndFlush(new ChatMessagePacket(-1, welcomeMessage));
+        }
     }
 
     @Override
