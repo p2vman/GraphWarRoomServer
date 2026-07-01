@@ -22,4 +22,5 @@ RUN mkdir -p /app/logs
 
 VOLUME ["/app/logs", "/app"]
 
+ENV IN_DOCKER=true
 ENTRYPOINT ["java", "-jar", "/app/server.jar"]

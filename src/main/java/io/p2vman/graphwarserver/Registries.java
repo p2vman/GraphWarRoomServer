@@ -1,7 +1,6 @@
 package io.p2vman.graphwarserver;
 
 import io.p2vman.graphwarserver.card.GeneratorFactory;
-import io.p2vman.graphwarserver.card.LineCardGenerator;
 import io.p2vman.graphwarserver.card.StandardCardGenerator;
 import io.p2vman.graphwarserver.registry.Identifier;
 import io.p2vman.graphwarserver.registry.Registry;
@@ -13,6 +12,5 @@ public class Registries {
 
     static {
         Registry.register(CARD_GENERATORS, Identifier.tryParse("standard"), StandardCardGenerator::new);
-        Registry.register(CARD_GENERATORS, Identifier.tryParse("line"), LineCardGenerator::new);
     }
 }
