@@ -77,7 +77,7 @@ public class HandshakeHandler extends ChannelInboundHandlerAdapter {
         String lowerName = name.toLowerCase(Locale.ROOT);
 
         if (name.equals("Player") || lowerName.contains("bot") || name.equals("NotMe")) {
-            LOGGER.warn("Handshake rejected: default/bot name '{}' from {}", name, channel.remoteAddress());
+            LOGGER.warn("Handshake rejected: bot name '{}' from {}", name, channel.remoteAddress());
             ctx.close();
             return;
         }

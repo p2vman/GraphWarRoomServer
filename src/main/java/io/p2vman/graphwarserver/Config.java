@@ -12,6 +12,7 @@ public class Config {
     public List<Server> servers;
     public Metrics metrics;
     public String[] welcome_messages;
+    public String name;
 
     @ToString
     public static class EventLoops {

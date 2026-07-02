@@ -24,6 +24,10 @@ import org.yaml.snakeyaml.constructor.Constructor;
 
 import java.io.File;
 import java.io.FileReader;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.OperatingSystemMXBean;
+import java.lang.management.ThreadMXBean;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Objects;
@@ -104,7 +108,7 @@ public class Main implements AutoCloseable {
         servers = new ObjectArrayList<>();
         for (Config.Server server : config.servers) {
             TrackerClient client = new TrackerClient(config.tracker.host, config.tracker.port, ctx);
-            client.login();
+            client.login().awaitUninterruptibly();
             TrackerWrapper wrapper = new TrackerWrapper(client);
             int port = pool.bind();
             wrapper.bind(port);
@@ -129,23 +133,40 @@ public class Main implements AutoCloseable {
                     tracker.sendRoomStatus(server.funcType, server.avatars.size());
                 });
 
-                ctx.getWorkerGroup().scheduleAtFixedRate(() -> {
-                    MetricsClient.getInstance().run((client -> {
-                        client.send(new MetricsClient.PointBuilder("servers")
-                                .addTag("server", Objects.requireNonNull(tracker.getName()))
-                                .addField("online", server.players.size())
-                                .addField("avatars", server.avatars.size() - server.players.size())
-                        );
-                    }));
-
-                }, 0, 1, TimeUnit.SECONDS);
-
                 for (Plugin plugin : plugins) {
                     LOGGER.info("Load plugin: {}", plugin.getClass().getName());
                     plugin.onServerStarting(server);;
                 }
             });
         }
+
+        ctx.getWorkerGroup().scheduleAtFixedRate(() -> {
+            MetricsClient.getInstance().run((client -> {
+                List<MetricsClient.PointBuilder> points = new ObjectArrayList<>();
+                for (BasicServer server : this.servers) {
+                    server.sync(() -> {
+                        points.add(new MetricsClient.PointBuilder("servers")
+                                .addTag("server", Objects.requireNonNull(server.getTracker().getName()))
+                                .addField("online", server.players.size())
+                                .addField("avatars", server.avatars.size() - server.players.size()));
+                    });
+                }
+                MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
+                OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
+                ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
+
+                points.add(new MetricsClient.PointBuilder("MBean")
+                        .addTag("server", this.config.name)
+                        .addField("h_usage", memoryBean.getHeapMemoryUsage().getUsed() / (1024 * 1024))
+                        .addField("h_size", memoryBean.getHeapMemoryUsage().getMax() / (1024 * 1024))
+                        .addField("c_usage", osBean.getSystemLoadAverage() * 100)
+                        .addField("t_active", threadBean.getThreadCount())
+
+                );
+                client.send(points.toArray(new MetricsClient.PointBuilder[0]));
+            }));
+        }, 0, 1, TimeUnit.SECONDS);
+
         while (true) {
             LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(1));
         }

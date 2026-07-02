@@ -25,7 +25,7 @@ import java.util.function.Consumer;
 
 public class TrackerClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(TrackerClient.class);
-    private Channel channel = null;
+    private volatile Channel channel = null;
     @Getter
     private volatile long lastReceivedTime;
     @Getter
@@ -38,21 +38,20 @@ public class TrackerClient {
     @Getter
     private Consumer<TrackerClient> reconnectTrigger = null;
 
+    private ChannelFuture reconnect_furure = null;
+
     public TrackerClient(String ip, int port, EventLoopGroupType.EventLoopContext ctx) throws IOException {
         this.lastReceivedTime = System.currentTimeMillis();
         this.lastSentTime = System.currentTimeMillis();
         this.ctx = ctx;
         this.ip = ip;
         this.port = port;
-        reconnect();
+        reconnect().awaitUninterruptibly();
         ctx.getWorkerGroup().scheduleAtFixedRate(this::keep, 0, 2, TimeUnit.SECONDS);
     }
 
-    public void login() throws InterruptedException {
-        var f = sendAsyncMessage("23E(S_%24%40)!Xc");
-        if (f != null) {
-            f.await();
-        }
+    public ChannelFuture login() throws InterruptedException {
+        return sendAsyncMessage("23E(S_%24%40)!Xc");
     }
 
     private void handleMessage(String msg) {
@@ -107,16 +106,24 @@ public class TrackerClient {
         }
         if (!channel.isActive()) {
             LOGGER.warn("Reconnect");
-            reconnect();
-            if (reconnectTrigger != null) {
-                reconnectTrigger.accept(this);
-            }
+            if (reconnect_furure != null && !reconnect_furure.isSuccess()) return;
+            this.reconnect_furure = reconnect().addListener(future -> {
+                if (future.isSuccess()) {
+                    login().addListener(future1 -> {
+                        if (future1.isSuccess()) {
+                            if (reconnectTrigger != null) {
+                                reconnectTrigger.accept(this);
+                            }
+                        }
+                    });
+                }
+            });
         }
     }
 
     @SneakyThrows
-    public void reconnect() {
-        if (channel != null && channel.isActive()) channel.close().awaitUninterruptibly();
+    public ChannelFuture reconnect() {
+        if (channel != null && channel.isActive()) channel.close();
         this.lastReceivedTime = System.currentTimeMillis();
         this.lastSentTime = System.currentTimeMillis();
         Bootstrap b = new Bootstrap();
@@ -150,20 +157,13 @@ public class TrackerClient {
                     }
                 });
 
-        ChannelFuture f = b.connect(ip, port);
-        try {
-            if (!f.await(TimeUnit.SECONDS.toMillis(10))) {
-                throw new IOException("Connection timed out");
+        return b.connect(ip, port).addListener((ChannelFutureListener) future -> {
+            if (future.isSuccess()) {
+                this.channel = future.channel();
+            } else {
+                LOGGER.error("Connection failed", future.cause());
             }
-        } catch (InterruptedException | IOException e) {
-            throw new IOException(e);
-        }
-
-        if (!f.isSuccess()) {
-            throw new IOException(f.cause());
-        }
-
-        this.channel = f.channel();
+        });
     }
 
 }
